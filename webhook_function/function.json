@@ -1,4 +1,5 @@
-sabled": false,
+{
+  "disabled": false,
   "bindings": [
     {
       "authLevel": "anonymous",
