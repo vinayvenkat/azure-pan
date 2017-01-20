@@ -10,7 +10,7 @@
       "type": "queue",
       "name": "myQueue",
       "queueName": "vvpanq",
-      "connection": "DefaultEndpointsProtocol=http;AccountName=function493cc0b4a586;AccountKey=7yziNYE1aXM7YFHWrkjIqaSbZfYlvCN5cb/YW5kvlYTsD0KogpOzw2Qf65pyQ+399wzLyJv12aiub45BqvwpTw==",
+      "connection": "functionb046c1a68010_STORAGE",
       "direction": "in"
     }
   ],
