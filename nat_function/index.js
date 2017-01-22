@@ -9,7 +9,7 @@ var rexec = require('remote-exec');
 var s_exec = require('node-ssh-exec')
 
 var config = {
-    host: 104.215.93.85,
+    host: '104.215.93.85',
     username: 'vinay',
     password: 'VinayLinux2017$'
 }
