@@ -10,6 +10,7 @@
     "azure-arm-storage": "^0.12.2-preview",
     "ms-rest-azure": "^1.9.0",
     "remote-exec": "^0.0.3",
-    "ssh-exec": "^2.0.0"
+    "ssh-exec": "^2.0.0",
+	"node-ssh-exec": "^0.1.1"
   }
 }
