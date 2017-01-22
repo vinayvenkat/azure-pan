@@ -5,13 +5,6 @@
     	"name": "myTimer",
     	"type": "timerTrigger",
     	"direction": "in"
-    },
-    {
-      "type": "queue",
-      "name": "myQueue",
-      "queueName": "vvpanq",
-      "connection": "functionb046c1a68010_STORAGE",
-      "direction": "in"
     }
   ],
   "disabled": false
