@@ -1,8 +1,8 @@
 module.exports = function (context, req) {
     context.log('JavaScript HTTP trigger function processed a request.');
-    context.log('Status: ' + req.body.context.status)
-    context.log('Operation: ' + req.body.context.operation)
-    context.log('Context: ' + req.body.context.context)
+    context.log('Status: ' + req.body.status)
+    context.log('Operation: ' + req.body.operation)
+    context.log('Context: ' + req.body.context)
     context.log('Timestamp: ' + req.body.context.timestamp)
     context.log('ID: ' + req.body.context.id)
     context.log('Name: ' + req.body.context.name)
