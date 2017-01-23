@@ -8,8 +8,6 @@ var resourceClient;
 //Sample Config
 var randomIds = {};
 var location = 'westus';
-var resourceGroupName = _generateRandomId('testrg', randomIds);
-var resourceName = _generateRandomId('testresource', randomIds);
 
 var resourceProviderNamespace = 'Microsoft.KeyVault';
 var parentResourcePath = '';
