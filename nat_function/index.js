@@ -9,9 +9,8 @@ var rexec = require('remote-exec');
 var s_exec = require('node-ssh-exec')
 
 var config = {
-    host: '104.215.93.85',
     username: 'vinay',
-    password: 'VinayLinux2017$'
+    password: 'VinayLinux2017$',
 }
 command = 'sudo iptables -t nat -L -v -n'
 
@@ -51,21 +50,40 @@ var nat_port_range = [];
 var hosts = [];
 
 
-function check_nat_exists() {
-    //config['host'] = external_load_balancer.ip_address
+function clone(a) {
+   return JSON.parse(JSON.stringify(a));
+}
 
-    s_exec(config, command, function (error, response) {
-    if (error) {
-        throw error;
+function check_nat_exists() {
+    config['host'] = external_load_balancer.ip_address
+    // Cycle through all the nat ports
+    for(s = 0; s < nat_port_range.length; s++) {
+        config['port'] = nat_port_range[s]
+        tmp_config = {}
+        tmp_config = clone(config)
+        console.log('config options')
+        console.info(tmp_config)
+        execute_ssh_command_with_output(tmp_config, nat_port_range[s])
     }
-    console.log('#############' + response);
-    nat_rule_ip_str = 'to:' + internal_load_balancer.privateIPAddress
-    if (response.includes(nat_rule_ip_str)) {
-        console.log('Exists')
-    } else {
-        install_nat_rules()
-    }
-});
+}
+
+function execute_ssh_command_with_output(tmp_config, remote_port) {
+
+    s_exec(tmp_config, command, function (error, response) {
+        if (error) {
+            throw error;
+        } else {
+            console.log('#############' + response);
+            nat_rule_ip_str = 'to:' + internal_load_balancer.privateIPAddress
+            if (response.includes(nat_rule_ip_str)) {
+                console.log('Exists')
+            } else {
+                n_config = {}
+                n_config = clone(connection_options)
+                install_nat_rules(n_config, remote_port)
+            }
+        }
+    });
 }
 
 function execute_remote_ssh_command(cmds_list) {
@@ -80,7 +98,7 @@ function execute_remote_ssh_command(cmds_list) {
     });
 }
 
-function install_nat_rules() {
+function install_nat_rules(n_config, remote_port) {
 
     // Require: 
     // 1. Private IP address of the internal load balancer
@@ -104,26 +122,23 @@ function install_nat_rules() {
     // Algorithm is as follows
     // Send a pilot command to check connectivity 
 
-    // Don't forget to add the specific port to the 
+    // Add the specific port to the 
     // connections options. 
-
-    for(s = 0; s < nat_port_range.length; s++) {
-        connection_options['port'] = nat_port_range[s]
-        console.log('Connection options')
-        console.info(connection_options)
-        ret = execute_remote_ssh_command(pilot_cmd)
-        if (ret) {
-            console.log('Error occurred executing command against remote server.')
+    
+    n_config['port'] = remote_port
+    console.log('Connection options')
+    console.info(n_config)
+    ret = execute_remote_ssh_command(n_config, pilot_cmd)
+    if (ret) {
+        console.log('Error occurred executing command against remote server.')
+    } else {
+        console.info('Remote command successfully executed.')
+        // Execute establishing the NAT rules
+        ret = execute_remote_ssh_command(n_config, final_cmds_list)
+        if (!ret) {
+            console.log('Command executed successfully.')
         } else {
-            console.info('Remote command successfully executed.')
-            // Execute establishing the NAT rules
-            ret = execute_remote_ssh_command(final_cmds_list)
-            if (!ret) {
-                console.log('Command executed successfully.')
-            } else {
-                console.info('Failed to execute the command on the remote server.')
-            }
-
+            console.info('Failed to execute the command on the remote server.')
         }
     }
 }
@@ -184,6 +199,7 @@ function populate_public_lb(result) {
     }
     external_load_balancer.ip_address = result['ipAddress']
     hosts.push(external_load_balancer.ip_address)
+    config['host'] = external_load_balancer.ip_address
     console.info('External LB IP' + external_load_balancer.ip_address)
     setTimeout(check_nat_exists, 10000)
 }
@@ -239,15 +255,12 @@ process_load_balancer = function(credentials, resourceGroupName)
 
 module.exports = function (context, myTimer) {
     context.log('JavaScript HTTP trigger function processed a request.');
-    context.log('This is where it all starts this is where it gets good');
-	msRestAzure.loginWithServicePrincipalSecret(clientId, secret, domain, function(err, credentials) {
+    msRestAzure.loginWithServicePrincipalSecret(clientId, secret, domain, function(err, credentials) {
         if(err) {
                 console.log(err);
         } else {
             console.log(credentials)
             process_load_balancer(credentials, resource_gp_name)
         }
-	});
-	
-    context.done();
-};
+    });
+}
