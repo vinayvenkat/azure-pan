@@ -1,7 +1,7 @@
 {
   "bindings": [
     {
-	"schedule": "*/10 * * * * *",
+	"schedule": "0 */5 * * * *",
     	"name": "myTimer",
     	"type": "timerTrigger",
     	"direction": "in"
