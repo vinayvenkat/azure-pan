@@ -259,8 +259,8 @@ module.exports = function (context, myTimer) {
         if(err) {
                 console.log(err);
         } else {
-            console.log(credentials)
-            process_load_balancer(credentials, resource_gp_name)
+            console.info(credentials)
+            //process_load_balancer(credentials, resource_gp_name)
         }
     });
 }
