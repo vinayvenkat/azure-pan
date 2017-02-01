@@ -238,11 +238,14 @@ function lb_resp(err, result){
                 console.info('######### LB END ###############')
             }
         }
-}
 
+}
+function GetEnvironmentVariable(name)
+{
+	    return name + ": " + process.env[name];
+}
 // Implement a function here to make ansible calls 
 // to program the masquerade rules and the DNAT rules
-
 
 process_load_balancer = function(credentials, resourceGroupName)
 {
@@ -255,6 +258,8 @@ process_load_balancer = function(credentials, resourceGroupName)
 
 module.exports = function (context, myTimer) {
     context.log('JavaScript HTTP trigger function processed a request.');
+    var rg_name = GetEnvironmentVariable("RESOURCE_GROUP_NAME");
+    context.log('resource group name: ' + rg_name);
     msRestAzure.loginWithServicePrincipalSecret(clientId, secret, domain, function(err, credentials) {
         if(err) {
                 console.log(err);
@@ -264,3 +269,5 @@ module.exports = function (context, myTimer) {
         }
     });
 }
+
+
