@@ -257,12 +257,12 @@ process_load_balancer = function(credentials, resourceGroupName)
 }
 
 module.exports = function (context, myTimer) {
-    context.log('JavaScript HTTP trigger function processed a request.');
-    var rg_name = GetEnvironmentVariable("RESOURCE_GROUP_NAME");
-    context.log('resource group name: ' + rg_name);
+    context.log('JavaScript HTTP trigger function processed a request.')
+    var rg_name = GetEnvironmentVariable("RESOURCE_GROUP_NAME")
+    context.log('resource group name: ' + rg_name)
     msRestAzure.loginWithServicePrincipalSecret(clientId, secret, domain, function(err, credentials) {
         if(err) {
-                console.log(err);
+                console.log(err)
         } else {
             console.info(credentials)
             //process_load_balancer(credentials, resource_gp_name)
