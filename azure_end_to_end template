@@ -1,0 +1,794 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "addressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "Address prefix for the Virtual Network"
+      }
+    },
+    "subnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/24",
+      "metadata": {
+        "description": "Subnet prefix"
+      }
+    },
+    "skuName": {
+      "type": "string",
+      "allowedValues": [
+        "Standard_Small",
+        "Standard_Medium",
+        "Standard_Large"
+      ],
+      "defaultValue": "Standard_Medium",
+      "metadata": {
+        "description": "Sku Name"
+      }
+    },
+    "capacity": {
+      "type": "int",
+      "defaultValue": 2,
+      "metadata": {
+        "description": "Number of instances"
+      }
+    },
+    "instanceCount": {
+      "type": "int",
+      "defaultValue": 2,
+      "metadata": {
+        "description": "Number of VM instances (100 or less)."
+      },
+      "maxValue": 100
+    },
+    "ubuntuOSVersion": {
+      "type": "string",
+      "defaultValue": "16.04.0-LTS",
+      "allowedValues": [
+        "12.04.5-LTS",
+        "14.04.5-LTS",
+        "15.10",
+        "16.04.0-LTS"
+      ],
+      "metadata": {
+        "description": "The Ubuntu version for the VM. This will pick a fully patched image of this given Ubuntu version."
+      }
+    },
+    "vmssName":{
+      "type":"string",
+      "metadata":{
+        "description":"String used as a base for naming resources. Must be 3-61 characters in length and globally unique across Azure. A hash is prepended to this string for some resources, and resource-specific information is appended."
+      },
+      "maxLength": 61
+    },
+    "adminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "Admin username on all VMs."
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Admin password on all VMs."
+      }
+    },
+    "appName": {
+        "type": "string",
+        "metadata": {
+            "description": "The name of the function app that you wish to create."
+        }
+    },
+    "sku": {
+        "type": "string",
+        "allowedValues": [
+            "Free",
+            "Shared",
+            "Basic",
+            "Standard"
+        ],
+        "defaultValue": "Standard",
+        "metadata": {
+            "description": "The pricing tier for the hosting plan."
+        }
+    },
+    "workerSize": {
+        "type": "string",
+        "allowedValues": [
+            "0",
+            "1",
+            "2"
+        ],
+        "defaultValue": "0",
+        "metadata": {
+            "description": "The instance size of the hosting plan (small, medium, or large)."
+        }
+    },
+    "appStorageAccountType": {
+        "type": "string",
+        "defaultValue": "Standard_LRS",
+        "allowedValues": [
+            "Standard_LRS",
+            "Standard_GRS",
+            "Standard_ZRS",
+            "Premium_LRS"
+        ],
+        "metadata": {
+            "description": "Storage Account type for the function app."
+        }
+    },
+    "repoURL": {
+      	"type": "string",
+      	"defaultValue": "https://github.com/vinayvenkat/azure-pan",
+      	"metadata": {
+        	"description": "The URL for the GitHub repository that contains the project to deploy."
+      	}
+    },
+    "branch": {
+      	"type": "string",
+      	"defaultValue": "master",
+      	"metadata": {
+        	"description": "The branch of the GitHub repository to use."
+      	}
+    }
+  },
+  "variables": {
+    "publicIPAddressName": "publicIp1",
+    "elbpublicIPAddressName": "elbPublicIP",
+    "vmName": "MyUbuntuVM",
+    "vmSize": "Standard_A1",
+    "virtualNetworkName": "virtualNetwork1",
+    "vnetID": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]",
+    "websubnetName": "websubnetName",
+    "websubnetRef": "[concat(variables('vnetID'),'/subnets/', variables('websubnetName'))]",
+    "subnetName": "backendSubnet",
+    "subnetRef": "[concat(variables('vnetID'),'/subnets/',variables('subnetName'))]",
+    "publicIPRef": "[resourceId('Microsoft.Network/publicIPAddresses',variables('publicIPAddressName'))]",
+    "elbpublicIPAddressID": "[resourceId('Microsoft.Network/publicIPAddresses',variables('elbpublicIPAddressName'))]",
+    "applicationGatewayID": "[resourceId('Microsoft.Network/applicationGateways',variables('appGwName'))]",
+    "apiVersion": "2015-05-01-preview",
+    "osType": {
+      "publisher": "Canonical",
+      "offer": "UbuntuServer",
+      "sku": "[parameters('ubuntuOSVersion')]",
+      "version": "latest"
+    },
+    "imageReference": "[variables('osType')]",
+    "namingInfix": "[toLower(substring(concat(parameters('vmssName'), uniqueString(resourceGroup().id)), 0, 9))]",
+    "newStorageAccountSuffix": "[concat(variables('namingInfix'), 'sa')]",
+    "uniqueStringArray": [
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '0')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '1')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '2')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '3')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '4')))]"
+    ],
+    "webstorageaccount": "[concat(variables('namingInfix'), 'webstorage')]",
+    "vmStorageAccountContainerName": "vhds",
+    "vhdContainerName": "[concat(variables('namingInfix'), 'vhd')]",
+    "osDiskName": "[concat(variables('namingInfix'), 'osdisk')]",
+    "saCount": "[length(variables('uniqueStringArray'))]",
+    "appGwName": "[concat(variables('namingInfix'), 'appGw')]",
+    "appGwBePoolName": "[concat(variables('namingInfix'), 'appGwBepool')]",
+    "appGwSubnetName": "[concat(variables('namingInfix'),'appGwSubnet')]",
+    "appGwSubnetPrefix": "10.0.1.0/24",
+    "appGwSubnetID": "[concat(variables('virtualNetworkName'),'/subnets/',variables('appGwSubnetName'))]",
+    "appGwFrontendPort": 80,
+    "appGwBackendPort": 80,
+    "appGwsubnetRef": "[concat(variables('vnetID'),'/subnets/',variables('appGwSubnetName'))]",
+    "nicName": "[concat(variables('namingInfix'), 'nic')]",
+    "ipConfigName": "[concat(variables('namingInfix'), 'ipconfig')]",
+    "computeApiVersion": "2016-03-30",
+    "networkApiVersion": "2016-03-30",
+    "storageApiVersion": "2015-06-15",
+    "storageAccountType": "Standard_LRS",
+    "webPoolName": "[concat(variables('namingInfix'), 'webpool')]",
+    "loadBalancerName": "[concat(variables('namingInfix'), 'lb')]",
+    "lbID": "[resourceId('Microsoft.Network/loadBalancers',variables('loadBalancerName'))]",
+    "frontEndIPConfigID": "[concat(variables('lbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
+    "natRuleName": "[concat(variables('namingInfix'), 'natpool')]",
+    "natBackendPort": 80,
+    "webnic1NamePrefix": "webnic1",
+    "webSubnetPrefix": "10.0.2.0/24",
+    "OSDiskName": "osdiskforlinuxsimple",
+    "elbloadBalancerName": "pub-elb-lb",
+    "elblbID": "[resourceId('Microsoft.Network/loadBalancers',variables('elbloadBalancerName'))]",
+    "elbfrontEndIPConfigID": "[concat(variables('elblbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
+    "elbnatPoolName": "elbnatpool",
+    "elbbePoolName": "elbbepool",
+    "elbnatStartPort": 50000,
+    "elbnatEndPort": 50119,
+    "elbnatBackendPort": 22,
+    "functionAppName": "[parameters('appName')]",
+    "hostingPlanName": "[parameters('appName')]",
+    "appStorageAccountName": "[concat(uniquestring(resourceGroup().id), 'functions')]"
+  },
+  "resources": [
+  	{
+      "apiVersion": "[variables('apiVersion')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "[variables('elbpublicIPAddressName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+      }
+    },
+    {
+      "apiVersion": "[variables('apiVersion')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "[variables('publicIPAddressName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[concat(variables('uniqueStringArray')[copyIndex()], variables('newStorageAccountSuffix'))]",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "[variables('storageApiVersion')]",
+      "copy": {
+        "name": "storageLoop",
+        "count": "[variables('saCount')]"
+      },
+      "properties": {
+        "accountType": "[variables('storageAccountType')]"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('webstorageaccount')]",
+      "apiVersion": "2016-01-01",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "[variables('storageAccountType')]"
+      },
+      "kind": "Storage",
+      "properties": {}
+    },
+    {
+      "apiVersion": "[variables('apiVersion')]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "name": "[variables('virtualNetworkName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('addressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('subnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('subnetPrefix')]"
+            }
+          },
+          {
+            "name": "[variables('appGwSubnetName')]",
+            "properties": {
+              "addressPrefix": "[variables('appGwSubnetPrefix')]"
+            }
+          },
+          {
+            "name": "[variables('websubnetName')]",
+            "properties": {
+              "addressPrefix": "[variables('webSubnetPrefix')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/loadBalancers",
+      "name": "[variables('elbloadBalancerName')]",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "[variables('networkApiVersion')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/publicIPAddresses/', variables('elbpublicIPAddressName'))]"
+      ],
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "LoadBalancerFrontEnd",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[variables('elbpublicIPAddressID')]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "[variables('elbbePoolName')]"
+          }
+        ],
+        "inboundNatPools": [
+          {
+            "name": "[variables('elbnatPoolName')]",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[variables('elbfrontEndIPConfigID')]"
+              },
+              "protocol": "tcp",
+              "frontendPortRangeStart": "[variables('elbnatStartPort')]",
+              "frontendPortRangeEnd": "[variables('elbnatEndPort')]",
+              "backendPort": "[variables('elbnatBackendPort')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/loadBalancers",
+      "name": "[variables('loadBalancerName')]",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "[variables('networkApiVersion')]",
+      "dependsOn": [
+      	"[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+      ],
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "LoadBalancerFrontEnd",
+            "properties": {
+              "subnet": {
+              	"id": "[variables('websubnetRef')]"
+              },
+              "privateIPAllocationMethod": "Dynamic"
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "[variables('webPoolName')]"
+          }
+        ],
+        "inboundNatRules": [
+          {
+            "name": "[variables('natRuleName')]",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[variables('frontEndIPConfigID')]"
+              },
+              "protocol": "tcp",
+              "frontendPort": 80,
+              "backendPort": 80,
+              "enableFloatingIP": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "[variables('apiVersion')]",
+      "name": "[variables('appGwName')]",
+      "type": "Microsoft.Network/applicationGateways",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]",
+        "[concat('Microsoft.Network/publicIPAddresses/', variables('publicIPAddressName'))]"
+      ],
+      "properties": {
+        "sku": {
+          "name": "[parameters('skuName')]",
+          "tier": "Standard",
+          "capacity": "[parameters('capacity')]"
+        },
+        "gatewayIPConfigurations": [
+          {
+            "name": "appGatewayIpConfig",
+            "properties": {
+              "subnet": {
+                "id": "[variables('appGwsubnetRef')]"
+              }
+            }
+          }
+        ],
+        "frontendIPConfigurations": [
+          {
+            "name": "appGatewayFrontendIP",
+            "properties": {
+              "PublicIPAddress": {
+                "id": "[variables('publicIPRef')]"
+              }
+            }
+          }
+        ],
+        "frontendPorts": [
+          {
+            "name": "appGatewayFrontendPort",
+            "properties": {
+              "Port": 80
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+          	"name": "[variables('appGwBePoolName')]"
+          }
+        ],
+        "backendHttpSettingsCollection": [
+          {
+            "name": "appGatewayBackendHttpSettings",
+            "properties": {
+              "Port": 80,
+              "Protocol": "Http",
+              "CookieBasedAffinity": "Disabled"
+            }
+          }
+        ],
+        "httpListeners": [
+          {
+            "name": "appGatewayHttpListener",
+            "properties": {
+              "FrontendIPConfiguration": {
+                "Id": "[concat(variables('applicationGatewayID'), '/frontendIPConfigurations/appGatewayFrontendIP')]"
+              },
+              "FrontendPort": {
+                "Id": "[concat(variables('applicationGatewayID'), '/frontendPorts/appGatewayFrontendPort')]"
+              },
+              "Protocol": "Http",
+              "SslCertificate": null
+            }
+          }
+        ],
+        "requestRoutingRules": [
+          {
+            "Name": "rule1",
+            "properties": {
+              "RuleType": "Basic",
+              "httpListener": {
+                "id": "[concat(variables('applicationGatewayID'), '/httpListeners/appGatewayHttpListener')]"
+              },
+              "backendAddressPool": {
+                "id": "[concat(variables('applicationGatewayID'), '/backendAddressPools/', variables('appGwBePoolName'))]"
+              },
+              "backendHttpSettings": {
+                "id": "[concat(variables('applicationGatewayID'), '/backendHttpSettingsCollection/appGatewayBackendHttpSettings')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachineScaleSets",
+      "name": "[variables('namingInfix')]",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "[variables('computeApiVersion')]",
+      "dependsOn": [
+        "storageLoop",
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]",
+        "[concat('Microsoft.Network/applicationGateways/', variables('appGwName'))]"
+      ],
+      "sku": {
+        "name": "Standard_A1",
+        "tier": "Standard",
+        "capacity": "[parameters('instanceCount')]"
+      },
+      "properties": {
+        "overprovision": "true",
+        "upgradePolicy": {
+          "mode": "Manual"
+        },
+        "virtualMachineProfile": {
+          "storageProfile": {
+            "osDisk": {
+              "vhdContainers": [
+                "[concat('https://', variables('uniqueStringArray')[0], variables('newStorageAccountSuffix'), '.blob.core.windows.net/', variables('vhdContainerName'))]",
+                "[concat('https://', variables('uniqueStringArray')[1], variables('newStorageAccountSuffix'), '.blob.core.windows.net/', variables('vhdContainerName'))]",
+                "[concat('https://', variables('uniqueStringArray')[2], variables('newStorageAccountSuffix'), '.blob.core.windows.net/', variables('vhdContainerName'))]",
+                "[concat('https://', variables('uniqueStringArray')[3], variables('newStorageAccountSuffix'), '.blob.core.windows.net/', variables('vhdContainerName'))]",
+                "[concat('https://', variables('uniqueStringArray')[4], variables('newStorageAccountSuffix'), '.blob.core.windows.net/', variables('vhdContainerName'))]"
+              ],
+              "name": "[variables('osDiskName')]",
+              "caching": "ReadOnly",
+              "createOption": "FromImage"
+            },
+            "imageReference": "[variables('imageReference')]"
+          },
+          "osProfile": {
+            "computerNamePrefix": "[variables('namingInfix')]",
+            "adminUsername": "[parameters('adminUsername')]",
+            "adminPassword": "[parameters('adminPassword')]"
+          },
+          "networkProfile": {
+            "networkInterfaceConfigurations": [
+              {
+                "name": "[variables('nicName')]",
+                "properties": {
+                  "primary": "true",
+                  "ipConfigurations": [
+                    {
+                      "name": "[variables('ipConfigName')]",
+                      "properties": {
+                        "subnet": {
+                          "id": "[concat('/subscriptions/', subscription().subscriptionId,'/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'), '/subnets/', variables('subnetName'))]"
+                        },
+                        "ApplicationGatewayBackendAddressPools": [
+                          {
+                            "id": "[concat('/subscriptions/', subscription().subscriptionId,'/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Network/applicationGateways/', variables('appGwName'), '/backendAddressPools/', variables('appGwBePoolName'))]"
+                          }
+                        ],
+                        "loadBalancerBackendAddressPools": [
+                          {
+                            "id": "[concat('/subscriptions/', subscription().subscriptionId,'/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Network/loadBalancers/', variables('elbloadBalancerName'), '/backendAddressPools/', variables('elbbePoolName'))]"
+                          }
+                        ],
+                        "loadBalancerInboundNatPools": [
+                          {
+                            "id": "[concat('/subscriptions/', subscription().subscriptionId,'/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Network/loadBalancers/', variables('elbloadBalancerName'), '/inboundNatPools/', variables('elbnatPoolName'))]"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "[variables('apiVersion')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[variables('webnic1NamePrefix')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]",
+        "[concat('Microsoft.Network/loadBalancers/', variables('loadBalancerName'))]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('websubnetRef')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(variables('lbID'), '/backendAddressPools/', variables('webPoolName'))]"
+                }
+              ],
+              "loadBalancerInboundNatRules": [
+                {
+                  "id": "[concat(variables('lbID'), '/inboundNatRules/', variables('natRuleName'))]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2016-03-30",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[variables('vmName')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/', variables('webstorageaccount'))]",
+        "[resourceId('Microsoft.Network/networkInterfaces/', variables('webnic1NamePrefix'))]"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[variables('vmName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": "[variables('imageReference')]",
+          "osDisk": {
+            "name": "osdisk",
+            "vhd": {
+              "uri": "[concat(reference(concat('Microsoft.Storage/storageAccounts/', variables('webstorageaccount')), '2016-01-01').primaryEndpoints.blob, variables('vmStorageAccountContainerName'),'/',variables('OSDiskName'),'.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces',variables('webnic1NamePrefix'))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": "true",
+            "storageUri": "[concat(reference(concat('Microsoft.Storage/storageAccounts/', variables('webstorageaccount')), '2016-01-01').primaryEndpoints.blob)]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(variables('vmName'),'/nginxscript')]",
+      "apiVersion": "[variables('apiVersion')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', variables('vmName'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Extensions",
+        "type": "CustomScript",
+        "typeHandlerVersion": "2.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "fileUris": [
+            "https://gist.githubusercontent.com/vinayvenkat/136eb44df54b32b2b427557ab52c2de5/raw/6cc48599db5b07b9bf49f77a292dfaa2c4c52881/nginx-install.sh"
+          ]
+        },
+        "protectedSettings": {
+          "commandToExecute": "['sh nginx-install.sh']"
+        }
+      }
+    },
+    {
+   	  "type": "Microsoft.Insights/autoscaleSettings",
+   	  "apiVersion": "2015-04-01",
+      "name": "[concat(variables('namingInfix'),'as1')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+     		"[concat('Microsoft.Compute/virtualMachineScaleSets/', variables('namingInfix'))]"
+   	  ],
+   	  "properties": {
+      "enabled": true,
+      "name": "[concat(variables('namingInfix'),'as1')]",
+      "profiles": [
+       {
+         "name": "Profile1",
+         "capacity": {
+           "minimum": "1",
+           "maximum": "3",
+           "default": "1"
+         },
+         "rules": [
+           {
+             "metricTrigger": {
+               "metricName": "Percentage CPU",
+               "metricNamespace": "",
+               "metricResourceUri": "[concat('/subscriptions/',subscription().subscriptionId,'/resourceGroups/',resourceGroup().name,'/providers/Microsoft.Compute/virtualMachineScaleSets/', variables('namingInfix'))]",
+               "timeGrain": "PT1M",
+               "statistic": "Average",
+               "timeWindow": "PT5M",
+               "timeAggregation": "Average",
+               "operator": "GreaterThan",
+               "threshold": 5.0
+             },
+             "scaleAction": {
+               "direction": "Increase",
+               "type": "ChangeCount",
+               "value": "1",
+               "cooldown": "PT5M"
+             }
+           },
+           {
+             "metricTrigger": {
+               "metricName": "Percentage CPU",
+               "metricNamespace": "",
+               "metricResourceUri": "[concat('/subscriptions/',subscription().subscriptionId,'/resourceGroups/',resourceGroup().name,'/providers/Microsoft.Compute/virtualMachineScaleSets/', variables('namingInfix'))]",
+               "timeGrain": "PT1M",
+               "statistic": "Average",
+               "timeWindow": "PT5M",
+               "timeAggregation": "Average",
+               "operator": "LessThan",
+               "threshold": 2.0
+             },
+             "scaleAction": {
+               "direction": "Decrease",
+               "type": "ChangeCount",
+               "value": "1",
+               "cooldown": "PT5M"
+             }
+           }
+         ]
+       }
+     ],
+     "notifications": [
+      {
+        "operation": "Scale",
+        "email": {
+          "sendToSubscriptionAdministrator": false,
+          "sendToSubscriptionCoAdministrators": false,
+          "customEmails": [
+              "vvenkatara@paloaltonetworks.com",
+              "vvenkatara@paloaltonetworks.com"
+              ]
+        },
+        "webhooks": [
+          {
+            "serviceUri": "https://vvtestmultiple2.azurewebsites.net/api/webhook_function",
+            "properties": {
+              "optional_key1": "optional_value1",
+              "optional_key2": "optional_value2"
+            }
+          }
+        ]
+      }
+    ],
+     "targetResourceUri": "[concat('/subscriptions/',subscription().subscriptionId,'/resourceGroups/', resourceGroup().name,'/providers/Microsoft.Compute/virtualMachineScaleSets/', variables('namingInfix'))]"
+   	}
+   },
+   {
+	 "type": "Microsoft.Storage/storageAccounts",
+     "name": "[variables('appStorageAccountName')]",
+     "apiVersion": "2015-06-15",
+     "location": "[resourceGroup().location]",
+     "properties": {
+        "accountType": "[parameters('appStorageAccountType')]"
+     }
+   },
+   {
+     "type": "Microsoft.Web/serverfarms",
+     "apiVersion": "2015-04-01",
+     "name": "[variables('hostingPlanName')]",
+     "location": "[resourceGroup().location]",
+     "properties": {
+        "name": "[variables('hostingPlanName')]",
+        "sku": "[parameters('sku')]",
+        "workerSize": "[parameters('workerSize')]",
+        "hostingEnvironment": "",
+        "numberOfWorkers": 1
+     }
+   },
+   {
+     "apiVersion": "2015-04-01",
+     "type": "Microsoft.Web/sites",
+     "name": "[variables('functionAppName')]",
+     "location": "[resourceGroup().location]",
+     "kind": "functionapp",
+      "properties": {
+        "name": "[variables('functionAppName')]",
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+        "hostingEnvironment": "",
+		"clientAffinityEnabled": false,
+		"alwaysOn": true
+      },
+      "dependsOn": [
+          "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+          "[resourceId('Microsoft.Storage/storageAccounts', variables('appStorageAccountName'))]"
+       ],
+      "resources": [
+        {
+          "apiVersion": "2016-03-01",
+          "name": "appsettings",
+          "type": "config",
+          "dependsOn": [
+             "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
+             "[resourceId('Microsoft.Storage/storageAccounts', variables('appStorageAccountName'))]",
+             "[resourceId('Microsoft.Web/sites/sourcecontrols', variables('functionAppName'), 'web')]"
+            ],
+          "properties": {
+             "AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('appStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('appStorageAccountName')), '2015-05-01-preview').key1,';')]", 
+             "AzureWebJobsDashboard": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('appStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('appStorageAccountName')), '2015-05-01-preview').key1,';')]", 
+             "FUNCTIONS_EXTENSION_VERSION": "~1",
+             "PAN_RESOURCE_GROUP_NAME": "[resourceGroup().name]"
+          }
+         },
+        {
+          "apiVersion": "2015-04-01",
+          "name": "web",
+          "type": "sourcecontrols",
+          "dependsOn": [
+             "[resourceId('Microsoft.Web/Sites', variables('functionAppName'))]"
+           ],
+          "properties": {
+             "RepoUrl": "[parameters('repoURL')]",
+             "branch": "[parameters('branch')]",
+             "IsManualIntegration": false
+           }
+         }
+	  ]
+    }
+  ]
+}
