@@ -6,13 +6,6 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req"
-    },
-	{
-      	"name": "myQueue",
-      	"queueName": "vvpanq",
-	    "connection": "functionb046c1a68010_STORAGE",
-      	"type": "queue",
-      	"direction": "out"
-    	}
+    }
   ]
 }

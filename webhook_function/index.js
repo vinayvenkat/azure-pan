@@ -14,7 +14,5 @@ module.exports = function (context, req) {
     context.log('Details: ' + req.body.context.details)
     context.log('Old Capacity' + req.body.context.oldCapacity)
     context.log('New Capacity' + req.body.context.newCapacity)
-    var message = 'Webhook notification message/' + req.body.context.oldCapacity + '/' + req.body.context.newCapacity;
-    context.bindings.myQueue = message;
     context.done();
 };
